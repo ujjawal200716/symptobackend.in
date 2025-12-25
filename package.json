@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "mongoose": "^9.0.2",
+    "multer": "^2.0.2"
+  },
+  "devDependencies": {
+    "vite": "^7.3.0"
+  }
+}
