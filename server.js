@@ -209,28 +209,54 @@ app.put('/api/update-profile', verifyToken, upload.single('profileImage'), async
   }
 });
 
-// 5. SAVE PAGE (Existing Medical History)
+// 5. SAVE PAGE (FIXED: Handles both News & Symptom Checks)
 app.post('/api/save-page', verifyToken, async (req, res) => {
   try {
-    const { title, pageData, informationType } = req.body;
-    const userId = req.user.id;
-    const urlToCheck = pageData.url; 
+    const { title, informationType } = req.body;
+    
+    // 1. Get data regardless of whether frontend sends 'content' or 'pageData'
+    const finalContent = req.body.content || req.body.pageData;
 
-    const user = await User.findById(userId);
-    const isDuplicate = user.savedData.some(item => item.content?.url === urlToCheck);
-
-    if (isDuplicate) {
-      return res.status(400).json({ message: "You have already saved this article." });
+    // 2. Safety Check: If data is missing, stop immediately (Prevent Crash)
+    if (!finalContent) {
+        return res.status(400).json({ message: "No content data provided." });
     }
 
+    const userId = req.user.id;
+    
+    // 3. DUPLICATE CHECK
+    // Only run this check if the content actually HAS a URL (like News/Hospitals)
+    // If it's a Symptom Check (no URL), we SKIP this to allow saving multiple checks.
+    if (finalContent.url) {
+        const user = await User.findById(userId);
+        
+        // Check if user already saved this URL
+        const isDuplicate = user.savedData.some(item => 
+            item.content && item.content.url === finalContent.url
+        );
+        
+        if (isDuplicate) {
+          return res.status(400).json({ message: "You have already saved this article." });
+        }
+    }
+
+    // 4. Save to Database
     await User.findByIdAndUpdate(userId, {
-        $push: { savedData: { title: title || "Untitled", informationType: informationType || "General", content: pageData } }
+        $push: { 
+            savedData: { 
+                title: title || "Untitled", 
+                informationType: informationType || "General", 
+                content: finalContent 
+            } 
+        }
       }, { new: true } 
     );
 
     res.json({ message: "Page saved successfully!" });
+
   } catch (err) {
-    res.status(500).json({ message: "Error saving page" });
+    console.error("Save Route Error:", err); 
+    res.status(500).json({ message: "Error saving page", error: err.message });
   }
 });
 
