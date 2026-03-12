@@ -260,6 +260,49 @@ app.post('/api/save-page', verifyToken, async (req, res) => {
   }
 });
 
+
+// 5b. SAVE MEDICAL DICTIONARY RECORD (NEW ROUTE)
+app.post('/api/save-medical-record', verifyToken, async (req, res) => {
+  try {
+    const { type, query, data } = req.body;
+
+    if (!data) {
+        return res.status(400).json({ message: "No data provided." });
+    }
+
+    const userId = req.user.id;
+    
+    // Duplicate Check: Don't let them save the exact same search term twice
+    const user = await User.findById(userId);
+    const isDuplicate = user.savedData.some(item => 
+        item.title === query && item.informationType === type
+    );
+    
+    if (isDuplicate) {
+      return res.status(400).json({ message: "You have already saved this record." });
+    }
+
+    // Save to Database mapping to your existing savedData structure
+    await User.findByIdAndUpdate(userId, {
+        $push: { 
+            savedData: { 
+                title: query || "Medical Search", 
+                informationType: type || "Medical Dictionary", 
+                content: data 
+            } 
+        }
+      }, { new: true } 
+    );
+
+    res.json({ message: "Medical record saved successfully!" });
+
+  } catch (err) {
+    console.error("Save Medical Record Error:", err); 
+    res.status(500).json({ message: "Error saving medical record", error: err.message });
+  }
+});
+
+
 // 6. GET SAVED PAGES (Medical History)
 app.get('/api/my-saved-pages', verifyToken, async (req, res) => {
   try {
