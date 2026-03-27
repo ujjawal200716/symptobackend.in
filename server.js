@@ -68,6 +68,16 @@ const UserSchema = new mongoose.Schema({
   conditions: { type: String, default: "" },
   // -----------------------------
   
+  // NEW: Store user feedback/reviews
+  reviews: [
+    {
+      name: String,      // <-- ADDED: Now the DB saves the user's name!
+      rating: Number,
+      text: String,
+      date: { type: Date, default: Date.now }
+    }
+  ],
+  
   // 1. Saved Medical Records (Existing)
   savedData: [
     {
@@ -172,6 +182,28 @@ app.get('/api/user-profile', verifyToken, async (req, res) => {
   }
 });
 
+// 3b. NEW: GET DASHBOARD SUMMARY (ALL DATA AT ONCE)
+app.get('/api/dashboard-summary', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Send back a neatly packaged object of the user's data for the frontend dashboard
+    res.json({
+      profile: user,
+      // Sort saved data to show newest 5 records first
+      recentRecords: user.savedData.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt)).slice(0, 5),
+      // Get only "Upcoming" appointments and reverse to show nearest first
+      upcomingAppointments: user.appointmentHistory.filter(a => a.status === "Upcoming").reverse(),
+      // Get the 3 most recently saved news articles
+      recentNews: user.newsHistory.slice(-3).reverse()
+    });
+  } catch (err) {
+    console.error("Dashboard Fetch Error:", err);
+    res.status(500).json({ message: "Server Error fetching dashboard data" });
+  }
+});
+
 // 4. UPDATE PROFILE (With Image Upload)
 app.put('/api/update-profile', verifyToken, upload.single('profileImage'), async (req, res) => {
   try {
@@ -260,8 +292,7 @@ app.post('/api/save-page', verifyToken, async (req, res) => {
   }
 });
 
-
-// 5b. SAVE MEDICAL DICTIONARY RECORD (NEW ROUTE)
+// 5b. SAVE MEDICAL DICTIONARY RECORD
 app.post('/api/save-medical-record', verifyToken, async (req, res) => {
   try {
     const { type, query, data } = req.body;
@@ -301,7 +332,6 @@ app.post('/api/save-medical-record', verifyToken, async (req, res) => {
     res.status(500).json({ message: "Error saving medical record", error: err.message });
   }
 });
-
 
 // 6. GET SAVED PAGES (Medical History)
 app.get('/api/my-saved-pages', verifyToken, async (req, res) => {
@@ -396,6 +426,54 @@ app.delete('/api/appointments/:id', verifyToken, async (req, res) => {
     res.json({ message: "Appointment deleted" });
   } catch (err) {
     res.status(500).json({ message: "Error deleting appointment" });
+  }
+});
+
+// --- NEW ROUTES FOR REVIEWS (ADMIN DASHBOARD) ---
+
+// 14. SUBMIT A REVIEW
+app.post('/api/reviews', verifyToken, async (req, res) => {
+  try {
+    const { rating, text, name } = req.body; // <-- EXTRACTS NAME FROM FRONTEND
+    
+    if (!rating || rating < 1 || rating > 5) {
+        return res.status(400).json({ message: "Invalid rating." });
+    }
+
+    await User.findByIdAndUpdate(req.user.id, {
+      $push: { reviews: { rating, text, name } } // <-- SAVES NAME TO DB
+    });
+
+    res.json({ message: "Review submitted successfully!" });
+  } catch (err) {
+    res.status(500).json({ message: "Error submitting review" });
+  }
+});
+
+// 15. GET ALL REVIEWS (FOR ADMIN DASHBOARD)
+app.get('/api/admin/reviews', verifyToken, async (req, res) => {
+  try {
+    // Fetches all users, pulling their reviews and their actual fullName as a backup
+    const allUsers = await User.find({}, 'fullName email reviews');
+    
+    let allReviews = [];
+    allUsers.forEach(user => {
+        if (user.reviews && user.reviews.length > 0) {
+            user.reviews.forEach(review => {
+                allReviews.push({
+                    name: review.name || user.fullName || "Anonymous User", // Smart fallback ensures name always shows
+                    email: user.email,
+                    rating: review.rating,
+                    text: review.text,
+                    date: review.date
+                });
+            });
+        }
+    });
+
+    res.json(allReviews);
+  } catch (err) {
+    res.status(500).json({ message: "Error fetching admin stats" });
   }
 });
 
